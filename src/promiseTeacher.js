@@ -32,15 +32,16 @@ class Promise {
   handleResult(result) {
     if (result instanceof Promise) {
       result.then(
-        y => { // y 可能又是一个 promise
-          if (y instanceof Promise) {
+        y => {
+          if (y instanceof Promise) { // y 可能又是一个 promise
             this.handleResult(y)
           } else {
             this.value = y
           }
         },
         r => {
-          return r
+          this.value = r
+          this.state = 'rejected'
         }
       )
     }
@@ -74,79 +75,98 @@ class Promise {
       this.handleResult(result)
     }
 
-    // 保证了在 resolve 以及同步代码之后调用
+      // 保证了在 resolve 以及同步代码之后调用
     nextTick(() => {
-      // 遍历callbak, 调用所有的 onFulfilled
-      this.callback.onFulfilled.forEach((resolveHandler, index) => {
-        //#region
-        // if (typeof resolveHandler === 'function') {
-        //   // let x
-        //   try {
-        //     // 这里的 result 需要进行处理
-        //     if (result === this) {
-        //       this.reject(new TypeError())
-        //     } else if (result instanceof Promise) {
-        //       console.log('应该进入这里才对')
-        //       console.log('-------------')
-        //       result.then(
-        //         y => {
-        //           x = resolveHandler.call(undefined, y)
-        //         },
-        //         r => {
-        //           x = this.callback.onRejected[index].call(undefined, r)
-        //           // x = resolveHandler.call(undefined, r)
-        //         }
-        //       )
-        //     } else if (result instanceof Object) {
-        //       let then
-        //       try {
-        //         then = result.then
-        //       } catch (e) {
-        //         this.reject(e)
-        //         return
-        //       }
-        //       if (then instanceof Function) {
-        //         // this.resolveWithThenable(result)
-        //         try {
-        //           result.then(
-        //             y => {
-        //               x = resolveHandler.call(undefined, y)
-        //             },
-        //             r => {
-        //               x = resolveHandler.call(undefined, r)
-        //             }
-        //           )
-        //         } catch (e) {
-        //           this.reject(e)
-        //         }
-        //       } else {
-        //         x = resolveHandler.call(undefined, result)
-        //       }
-        //     } else {
-        //       x = resolveHandler.call(undefined, result)
-        //     }
-        //   } catch (e) {
-        //     this.callback.promise2[index].reject(e)
-        //     return
-        //   }
-        //   this.callback.promise2[index].resolveWith(x)
-        // } else {
-        //   this.callback.promise2[index].resolveWith(result)
-        // }
-        //#endregion
-        if (typeof resolveHandler === 'function') {
-          let x
-          try {
-            x = resolveHandler.call(undefined, this.value)
-          } catch (e) {
-            this.callback.promise2[index].reject(e)
-            return
+      if (this.state === 'fulfilled') {
+        // 遍历callbak, 调用所有的 onFulfilled
+        this.callback.onFulfilled.forEach((resolveHandler, index) => {
+          //#region
+          // if (typeof resolveHandler === 'function') {
+          //   // let x
+          //   try {
+          //     // 这里的 result 需要进行处理
+          //     if (result === this) {
+          //       this.reject(new TypeError())
+          //     } else if (result instanceof Promise) {
+          //       console.log('应该进入这里才对')
+          //       console.log('-------------')
+          //       result.then(
+          //         y => {
+          //           x = resolveHandler.call(undefined, y)
+          //         },
+          //         r => {
+          //           x = this.callback.onRejected[index].call(undefined, r)
+          //           // x = resolveHandler.call(undefined, r)
+          //         }
+          //       )
+          //     } else if (result instanceof Object) {
+          //       let then
+          //       try {
+          //         then = result.then
+          //       } catch (e) {
+          //         this.reject(e)
+          //         return
+          //       }
+          //       if (then instanceof Function) {
+          //         // this.resolveWithThenable(result)
+          //         try {
+          //           result.then(
+          //             y => {
+          //               x = resolveHandler.call(undefined, y)
+          //             },
+          //             r => {
+          //               x = resolveHandler.call(undefined, r)
+          //             }
+          //           )
+          //         } catch (e) {
+          //           this.reject(e)
+          //         }
+          //       } else {
+          //         x = resolveHandler.call(undefined, result)
+          //       }
+          //     } else {
+          //       x = resolveHandler.call(undefined, result)
+          //     }
+          //   } catch (e) {
+          //     this.callback.promise2[index].reject(e)
+          //     return
+          //   }
+          //   this.callback.promise2[index].resolveWith(x)
+          // } else {
+          //   this.callback.promise2[index].resolveWith(result)
+          // }
+          //#endregion
+          if (typeof resolveHandler === 'function') {
+            let x
+            try {
+              x = resolveHandler.call(undefined, this.value)
+            } catch (e) {
+              this.callback.promise2[index].reject(e)
+              return
+            }
+            this.callback.promise2[index].resolveWith(x)
+          } else {
+            this.callback.promise2[index].resolve(this.value)
           }
-          this.callback.promise2[index].resolveWith(x)
-        } else {
-          this.callback.promise2[index].resolve(this.value)
-        }
-      })
+        })
+        return
+      }
+      if (this.state === 'rejected') {
+        this.callback.onRejected.forEach((rejectHandler, index) => {
+          if (typeof rejectHandler === 'function') {
+            let x
+            try {
+              x = rejectHandler.call(undefined, this.value)
+            } catch (e) {
+              this.callback.promise2[index].reject(e)
+              return
+            }
+            this.callback.promise2[index].resolveWith(x)
+          } else {
+            this.callback.promise2[index].reject(this.value)
+          }
+        })
+      }
     })
   }
 
