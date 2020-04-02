@@ -21,7 +21,6 @@ class Promise {
       onRejected: [],
       promise2: []
     }
-    this.value = undefined
     if (typeof fn !== 'function') {
       throw new Error('构造函数里必须传一个函数')
       return
@@ -29,50 +28,30 @@ class Promise {
     fn(this.resolve.bind(this), this.reject.bind(this))
   }
 
-  handleResult(result) {
-    if (result instanceof Promise) {
-      result.then(
-        y => { // y 可能又是一个 promise
-          if (y instanceof Promise) {
-            this.handleResult(y)
-          } else {
-            this.value = y
-          }
-        },
-        r => {
-          return r
-        }
-      )
-    }
-  }
-
   resolve(result) {
     if (this.state !== 'pending') {
       return // 保证了只调用一次onFulfilled
     }
-    this.value = result
     this.state = 'fulfilled'
     // let x
 
-    if (result instanceof Promise) {
-      //#region
-      // result.then(
-      //   y => {
-      //     // x = resolveHandler.call(undefined, y)
-      //     // result.resolve(y)
-      //     // result = y
-      //     result.resolve(y)
-      //   },
-      //   r => {
-      //     // x = this.callback.onRejected[index].call(undefined, r)
-      //     // result.reject(r)
-      //     result.reject(r)
-      //   }
-      // )
-      // return
-      //#endregion
-      this.handleResult(result)
+    if (result === this) {
+      
     }
+
+    if (result instanceof Promise) {
+      result.then(
+        y => {
+          x = resolveHandler.call(undefined, y)
+        },
+        r => {
+          x = this.callback.onRejected[index].call(undefined, r)
+          // x = resolveHandler.call(undefined, r)
+        }
+      )
+    }
+
+
 
     // 保证了在 resolve 以及同步代码之后调用
     nextTick(() => {
@@ -137,14 +116,14 @@ class Promise {
         if (typeof resolveHandler === 'function') {
           let x
           try {
-            x = resolveHandler.call(undefined, this.value)
+            x = resolveHandler.call(undefined, result)
           } catch (e) {
             this.callback.promise2[index].reject(e)
             return
           }
           this.callback.promise2[index].resolveWith(x)
         } else {
-          this.callback.promise2[index].resolve(this.value)
+          this.callback.promise2[index].resolve(result)
         }
       })
     })
@@ -152,9 +131,8 @@ class Promise {
 
   reject(reason) {
     if (this.state !== 'pending') {
-      return // 保证了只调用一次onRejected
-    }
-    this.value = reason
+      return
+    } // 保证了只调用一次onRejected
     this.state = 'rejected'
     // 保证了在 reject 以及同步代码之后调用
     nextTick(() => {
