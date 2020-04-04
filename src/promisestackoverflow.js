@@ -129,8 +129,9 @@ MyPromise.prototype.resolve = function(x) {
 }
 
 new MyPromise((resolve, reject) => {
-  resolve(MyPromise.reject(MyPromise.reject(2333)))
-}).then(null, innerPromise => {
-  innerPromise.then(null, console.log)
+  // resolve(2333)
+  throw new Error('xxx')
+}).then(console.log, e => {
+  console.log(e.message)
 })
 // MyPromise.reject(2333).then(null, console.log)

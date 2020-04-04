@@ -14,20 +14,38 @@ class Promise {
   constructor(fn) {
     this.state = 'pending'
     // [{onFulfilled, onRejected, nextPromise}, {onFulfilled, onRejected, nextPromise}]
-    this.on = [] // TODO 修改数组定义
+    this.on = []
     this.value = undefined
     if (typeof fn !== 'function') {
       throw new Error('构造函数里必须传一个函数')
       return
     }
-    // FIXME 这里是 resolveWith
-    fn(this.resolveWith.bind(this), this.reject.bind(this))
+    let wasCalled = false
+    // TODO 这里也要有一个wasCalled
+    // fn(this.resolveWith.bind(this), this.reject.bind(this))
+    try {
+      fn(
+        function (result) {
+          if (wasCalled) { return }
+          wasCalled = true
+          this.resolveWith(result)
+        }.bind(this),
+        function (reason) {
+          if (wasCalled) { return }
+          wasCalled = true
+          this.reject(reason)
+        }.bind(this)
+      )
+    } catch (e) {
+      if (wasCalled) { return }
+      this.reject(e)
+    }
   }
 
   handleResult(result) {
     if (result instanceof Promise) {
       result.then(
-        y => {
+        (y) => {
           this.state === 'fulfilled'
           if (y instanceof Promise) {
             // y 可能又是一个 promise
@@ -36,7 +54,7 @@ class Promise {
             this.value = y
           }
         },
-        r => {
+        (r) => {
           this.value = r
           this.state = 'rejected'
         }
@@ -63,6 +81,10 @@ class Promise {
         // FIXME on 改了所以, 这里的遍历方式也得改
         this.on.forEach(({ onFulfilled, onRejected, nextPromise }) => {
           if (typeof onFulfilled === 'function') {
+            if (onFulfilled.called) {
+              return
+            }
+            onFulfilled.called = true
             let x
             try {
               x = onFulfilled.call(undefined, this.value)
@@ -81,6 +103,10 @@ class Promise {
         // FIXME on 改了所以, 这里的遍历方式也得改
         this.on.forEach(({ onFulfilled, onRejected, nextPromise }) => {
           if (typeof onRejected === 'function') {
+            if (onRejected.called) {
+              return
+            }
+            onRejected.called = true
             let x
             try {
               x = onRejected.call(undefined, this.value)
@@ -108,6 +134,10 @@ class Promise {
     nextTick(() => {
       this.on.forEach(({ onFulfilled, onRejected, nextPromise }) => {
         if (typeof onRejected === 'function') {
+          if (onRejected.called) {
+            return
+          }
+          onRejected.called = true
           let x
           try {
             x = onRejected.call(undefined, this.value)
@@ -125,16 +155,26 @@ class Promise {
 
   then(onFulfilled, onRejected) {
     const nextPromise = new Promise(() => {})
+    if (typeof onFulfilled === 'function') {
+      onFulfilled.called = false
+    }
+    if (typeof onRejected === 'function') {
+      onRejected.called = false
+    }
     this.on.push({
       onFulfilled,
       onRejected,
-      nextPromise
+      nextPromise,
     })
     // TODO 其实 then 做的事情和 resolve 和 reject 做的事情是一样的, 只不过是加了个判断
     // TODO 不使用splice(0)方法的话就一定要加标记, 加标记的话遍历on数组或者只调用自己的都可以
     nextTick(() => {
       if (this.state === 'fulfilled') {
         if (typeof onFulfilled === 'function') {
+          if (onFulfilled.called) {
+            return
+          }
+          onFulfilled.called = true
           let x
           try {
             x = onFulfilled.call(undefined, this.value)
@@ -151,6 +191,10 @@ class Promise {
       if (this.state === 'rejected') {
         nextTick(() => {
           if (typeof onRejected === 'function') {
+            if (onRejected.called) {
+              return
+            }
+            onRejected.called = true
             let x
             try {
               x = onRejected.call(undefined, this.value)
@@ -168,7 +212,6 @@ class Promise {
       // nextPromise 必须和 onFulfilled 和 onRejected 一一对应
       // 因为有可能出现这样的代码 new Promise(resolve => resolve(3)).then().then(num => console.log(num))
       return nextPromise
-
     })
     return nextPromise
   }
@@ -177,6 +220,7 @@ class Promise {
     this.reject(new TypeError())
   }
 
+  // 是 promise 的话就用resolve, 因为是promise的话一定有一个定下来的value
   resolveWithPromise(x) {
     // x.then(
     //   result => {
@@ -190,9 +234,29 @@ class Promise {
   }
 
   resolveWithThenable(x) {
+    let wasCalled = false
     try {
-      x.then(this.resolveWith.bind(this), this.reject.bind(this))
+      // x.then(this.resolveWith.bind(this), this.reject.bind(this))
+      x.then(
+        function (y) {
+          if (wasCalled) {
+            return
+          }
+          wasCalled = true
+          this.resolveWith(y)
+        }.bind(this),
+        function (r) {
+          if (wasCalled) {
+            return
+          }
+          wasCalled = true
+          this.reject(r)
+        }.bind(this)
+      )
     } catch (e) {
+      if (wasCalled) {
+        return
+      }
       this.reject(e)
     }
   }
@@ -225,7 +289,7 @@ class Promise {
   }
 
   static resolve(result) {
-    return new Promise(resolve => resolve(result))
+    return new Promise((resolve) => resolve(result))
   }
 
   static reject(reason) {
