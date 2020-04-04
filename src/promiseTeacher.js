@@ -131,7 +131,7 @@ class Promise {
       nextPromise
     })
     // TODO 其实 then 做的事情和 resolve 和 reject 做的事情是一样的, 只不过是加了个判断
-    // TODO 这里要么只调用自己的, 要么使用splice(0)或者给onFulfilled和onRejected加调用与否标记
+    // TODO 不使用splice(0)方法的话就一定要加标记, 加标记的话遍历on数组或者只调用自己的都可以
     nextTick(() => {
       if (this.state === 'fulfilled') {
         if (typeof onFulfilled === 'function') {
