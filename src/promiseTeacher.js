@@ -21,11 +21,14 @@ class Promise {
       onRejected: [],
       promise2: []
     }
+    // [{onFulfilled, onRejected, nextPromise}, {onFulfilled, onRejected, nextPromise}]
+    this.on = [] // TODO 修改数组定义
     this.value = undefined
     if (typeof fn !== 'function') {
       throw new Error('构造函数里必须传一个函数')
       return
     }
+    // FIXME 这里是 resolveWith
     fn(this.resolve.bind(this), this.reject.bind(this))
   }
 
@@ -33,7 +36,9 @@ class Promise {
     if (result instanceof Promise) {
       result.then(
         y => {
-          if (y instanceof Promise) { // y 可能又是一个 promise
+          this.state === 'fulfilled'
+          if (y instanceof Promise) {
+            // y 可能又是一个 promise
             this.handleResult(y)
           } else {
             this.value = y
@@ -47,38 +52,23 @@ class Promise {
     }
   }
 
+  // FIXME resolve 只有在 resolveWith 里才能出现
   resolve(result) {
     if (this.state !== 'pending') {
       return // 保证了只调用一次onFulfilled
     }
     this.value = result
     this.state = 'fulfilled'
-    // let x
 
     if (result instanceof Promise) {
-      //#region
-      // result.then(
-      //   y => {
-      //     // x = resolveHandler.call(undefined, y)
-      //     // result.resolve(y)
-      //     // result = y
-      //     result.resolve(y)
-      //   },
-      //   r => {
-      //     // x = this.callback.onRejected[index].call(undefined, r)
-      //     // result.reject(r)
-      //     result.reject(r)
-      //   }
-      // )
-      // return
-      //#endregion
       this.handleResult(result)
     }
 
-      // 保证了在 resolve 以及同步代码之后调用
+    // 保证了在 resolve 以及同步代码之后调用
     nextTick(() => {
       if (this.state === 'fulfilled') {
         // 遍历callbak, 调用所有的 onFulfilled
+        // FIXME on 改了所以, 这里的遍历方式也得改
         this.callback.onFulfilled.forEach((resolveHandler, index) => {
           //#region
           // if (typeof resolveHandler === 'function') {
@@ -152,6 +142,7 @@ class Promise {
         return
       }
       if (this.state === 'rejected') {
+        // FIXME on 改了所以, 这里的遍历方式也得改
         this.callback.onRejected.forEach((rejectHandler, index) => {
           if (typeof rejectHandler === 'function') {
             let x
@@ -172,6 +163,7 @@ class Promise {
 
   reject(reason) {
     if (this.state !== 'pending') {
+      // TODO 试试看这种方法行不行, 不行就只能用闭包的方式了
       return // 保证了只调用一次onRejected
     }
     this.value = reason
@@ -196,20 +188,50 @@ class Promise {
   }
 
   then(onFulfilled, onRejected) {
-    // if (typeof onFulfilled === 'function') {
-    //   this.onFulfilled.push(onFulfilled)
-    // }
-    // if (typeof onRejected === 'function') {
-    //   this.onRejected.push(onRejected)
-    // }
-    // this.promise2 = new Promise(() => {})
-    // return this.promise2
-    this.callback.onFulfilled.push(onFulfilled)
-    this.callback.onRejected.push(onRejected)
     const nextPromise = new Promise(() => {})
-    this.callback.promise2.push(nextPromise)
-    // nextPromise 必须和 onFulfilled 和 onRejected 一一对应
-    // 因为有可能出现这样的代码 new Promise(resolve => resolve(3)).then().then(num => console.log(num))
+    // TODO 其实 then 做的事情和 resolve 和 reject 做的事情是一样的, 只不过是加了个判断
+    nextTick(() => {
+      if (this.state === 'fulfilled') {
+        if (typeof onFulfilled === 'function') {
+          let x
+          try {
+            x = onFulfilled.call(undefined, this.value)
+          } catch (e) {
+            nextPromise.reject(e)
+            return
+          }
+          nextPromise.resolveWith(x)
+        } else {
+          nextPromise.resolve(this.value)
+        }
+        return
+      }
+      if (this.state === 'rejected') {
+        nextTick(() => {
+          if (typeof onRejected === 'function') {
+            let x
+            try {
+              x = onRejected.call(undefined, this.value)
+            } catch (e) {
+              nextPromise.reject(e)
+              return
+            }
+            nextPromise.resolveWith(x)
+          } else {
+            nextPromise.reject(this.value)
+          }
+        })
+        return
+      }
+      // 运行到这里说明 state 是 pending
+      this.callback.onFulfilled.push(onFulfilled)
+      this.callback.onRejected.push(onRejected)
+      this.callback.promise2.push(nextPromise)
+      // nextPromise 必须和 onFulfilled 和 onRejected 一一对应
+      // 因为有可能出现这样的代码 new Promise(resolve => resolve(3)).then().then(num => console.log(num))
+      return nextPromise
+
+    })
     return nextPromise
   }
 
