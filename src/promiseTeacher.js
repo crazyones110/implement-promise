@@ -49,58 +49,7 @@ class Promise {
     }
     this.value = result
     this.state = 'fulfilled'
-
-    // if (result instanceof Promise) {
-    //   this.handleResult(result)
-    // }
-
-    // 保证了在 resolve 以及同步代码之后调用
-    nextTick(() => {
-      if (this.state === 'fulfilled') {
-        // 遍历callbak, 调用所有的 onFulfilled
-        // FIXME on 改了所以, 这里的遍历方式也得改
-        this.on.forEach(({ onFulfilled, onRejected, nextPromise }) => {
-          if (typeof onFulfilled === 'function') {
-            if (onFulfilled.called) {
-              return
-            }
-            onFulfilled.called = true
-            let x
-            try {
-              x = onFulfilled.call(undefined, this.value)
-            } catch (e) {
-              nextPromise.reject(e)
-              return
-            }
-            nextPromise.resolveWith(x)
-          } else {
-            nextPromise.resolveWith(this.value)
-          }
-        })
-        return
-      }
-      if (this.state === 'rejected') {
-        // FIXME on 改了所以, 这里的遍历方式也得改
-        this.on.forEach(({ onFulfilled, onRejected, nextPromise }) => {
-          if (typeof onRejected === 'function') {
-            if (onRejected.called) {
-              return
-            }
-            onRejected.called = true
-            let x
-            try {
-              x = onRejected.call(undefined, this.value)
-            } catch (e) {
-              nextPromise.reject(e)
-              return
-            }
-            nextPromise.resolveWith(x)
-          } else {
-            nextPromise.reject(this.value)
-          }
-        })
-      }
-    })
+    this.emit()
   }
 
   reject(reason) {
@@ -110,27 +59,7 @@ class Promise {
     }
     this.value = reason
     this.state = 'rejected'
-    // 保证了在 reject 以及同步代码之后调用
-    nextTick(() => {
-      this.on.forEach(({ onFulfilled, onRejected, nextPromise }) => {
-        if (typeof onRejected === 'function') {
-          if (onRejected.called) {
-            return
-          }
-          onRejected.called = true
-          let x
-          try {
-            x = onRejected.call(undefined, this.value)
-          } catch (e) {
-            nextPromise.reject(e)
-            return
-          }
-          nextPromise.resolveWith(x)
-        } else {
-          nextPromise.reject(this.value)
-        }
-      })
-    })
+    this.emit()
   }
 
   then(onFulfilled, onRejected) {
@@ -144,56 +73,37 @@ class Promise {
     this.on.push({
       onFulfilled,
       onRejected,
-      nextPromise,
+      nextPromise
     })
-    // TODO 其实 then 做的事情和 resolve 和 reject 做的事情是一样的, 只不过是加了个判断
-    // TODO 不使用splice(0)方法的话就一定要加标记, 加标记的话遍历on数组或者只调用自己的都可以
+    this.emit()
+    return nextPromise
+  }
+
+  emit() {
+    if (this.state === 'pending') { return }
+    const onName = this.state == 'fulfilled' ? 'onFulfilled' : 'onRejected'
+    const resolveOrReject =  this.state == 'fulfilled' ? 'resolveWith' : 'reject'
     nextTick(() => {
-      if (this.state === 'fulfilled') {
-        if (typeof onFulfilled === 'function') {
-          if (onFulfilled.called) {
+      this.on.forEach(listener => {
+        const { nextPromise } = listener
+        if (typeof listener[onName] === 'function') {
+          if (listener[onName].called) {
             return
           }
-          onFulfilled.called = true
+          listener[onName].called = true
           let x
           try {
-            x = onFulfilled.call(undefined, this.value)
+            x = listener[onName].call(undefined, this.value)
           } catch (e) {
             nextPromise.reject(e)
             return
           }
           nextPromise.resolveWith(x)
         } else {
-          nextPromise.resolve(this.value)
+          nextPromise[resolveOrReject](this.value)
         }
-        return
-      }
-      if (this.state === 'rejected') {
-        nextTick(() => {
-          if (typeof onRejected === 'function') {
-            if (onRejected.called) {
-              return
-            }
-            onRejected.called = true
-            let x
-            try {
-              x = onRejected.call(undefined, this.value)
-            } catch (e) {
-              nextPromise.reject(e)
-              return
-            }
-            nextPromise.resolveWith(x)
-          } else {
-            nextPromise.reject(this.value)
-          }
-        })
-        return
-      }
-      // nextPromise 必须和 onFulfilled 和 onRejected 一一对应
-      // 因为有可能出现这样的代码 new Promise(resolve => resolve(3)).then().then(num => console.log(num))
-      return nextPromise
+      })
     })
-    return nextPromise
   }
 
   resolveWithSelf() {
@@ -202,14 +112,6 @@ class Promise {
 
   // 是 promise 的话就用resolve, 因为是promise的话一定有一个定下来的value
   resolveWithPromise(x) {
-    // x.then(
-    //   result => {
-    //     this.resolve(result)
-    //   },
-    //   reason => {
-    //     this.reject(reason)
-    //   }
-    // )
     x.then(this.resolve.bind(this), this.reject.bind(this))
   }
 
