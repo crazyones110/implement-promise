@@ -565,7 +565,8 @@ class Promise {
           this.reject(r)
         }.bind(this)
       )
-    } catch (e) { // 2.3.3.3.4
+    } catch (e) {
+      // 2.3.3.3.4
       if (wasCalled) {
         return // 2.3.3.3.4.1
       }
@@ -629,7 +630,7 @@ class Promise {
 const promise = new Promise((resolve, reject) => {
   resolve(Promise.resolve(Promise.resolve(2333)))
 })
-promise.then(num => {
+promise.then((num) => {
   console.log(num) // 打印出2333
 })
 ```
@@ -640,8 +641,8 @@ promise.then(num => {
 const promise = new Promise((resolve, reject) => {
   resolve(Promise.reject(Promise.resolve(2333)))
 })
-promise.then(null, innerPromise => {
-  innerPromise.then(num => {
+promise.then(null, (innerPromise) => {
+  innerPromise.then((num) => {
     console.log(num) // 打印出2333
   })
 })
@@ -650,7 +651,7 @@ promise.then(null, innerPromise => {
 或者
 
 ```javascript
-const promise1 = new Promise(resolve => {
+const promise1 = new Promise((resolve) => {
   resolve(2333)
   throw new Error('xxx')
 })
@@ -659,27 +660,27 @@ promise1.then(console.log) // 打印出2333
 const promise1 = new Promise(() => {
   throw new Error('xxx')
 })
-promise1.then(null, e => {
+promise1.then(null, (e) => {
   console.log(e.message) // 打印出xxx
 })
 ```
 
 fn(this.resolveWith.bind(this))
 
-这一点我一开始也很困惑, 可以看我在stack overflow的提问
-[resolve和reject在js的promise里究竟做了什么](https://stackoverflow.com/questions/60694924/what-does-resolve-and-reject-actually-do-in-javascript-promise/60696430#60696430)
+这一点我一开始也很困惑, 可以看我在 stack overflow 的提问
+[resolve 和 reject 在 js 的 promise 里究竟做了什么](https://stackoverflow.com/questions/60694924/what-does-resolve-and-reject-actually-do-in-javascript-promise/60696430#60696430)
 
-一句话概括就是: `resolve`就表示你在做正确的事, 所以会帮你做一个promise解决程序; 而`reject`就表示你在把一个危险的东西传出去, 太危险了, 我不会帮你解决的(所以原封不动地传给下一个promise)
+一句话概括就是: `resolve`就表示你在做正确的事, 所以会帮你做一个 promise 解决程序; 而`reject`就表示你在把一个危险的东西传出去, 太危险了, 我不会帮你解决的(所以原封不动地传给下一个 promise)
 
 这里就不给代码了, 具体见我的[github](https://github.com/crazyones110/implement-promise)
-这里给出思路, 就是`new Promise(resolve)`里传进去的`resolve`也要做一个promise解决程序
+这里给出思路, 就是`new Promise(resolve)`里传进去的`resolve`也要做一个 promise 解决程序
 
 ### BONUS #2
 
 有如下代码:
 
 ```javascript
-const promise = new Promise(resolve => resolve(2333))
+const promise = new Promise((resolve) => resolve(2333))
 queueMicrotask(() => {
   promise.then(console.log)
 })
@@ -688,21 +689,114 @@ queueMicrotask(() => {
 ![微队列](notes.images/2020-04-05-11-27-36.png)
 
 如图所示, 这个`console.log`根本不会执行!
-解决的思路也不难想, 就是在`then`的时候也写一个`nextTick`来遍历执行onFulfilled. 但是会引入一个新的问题, 就是同一个`onFulfilled`可能会执行两次.
+解决的思路也不难想, 就是在`then`的时候也写一个`nextTick`来遍历执行 onFulfilled. 但是会引入一个新的问题, 就是同一个`onFulfilled`可能会执行两次.
 这时候有两种思路:
 
-- 函数记忆化 *(我的代码采用此种方法)*
+- 函数记忆化 _(我的代码采用此种方法)_
 - `arr.splice(0).forEach()`
 
 再思考, 如果`resolve`, `reject`, `then`的时候都执行`nextTick`遍历`onFulfilled`, 那是不是能把这个`nextTick`提取出来, 做为公共的函数呢. 答案是可以的, 这就是我们很熟悉的发布订阅模式啦~. 见如下代码:
 
 ```javascript
+resolve(result) {
+  if (this.state !== 'pending') {
+    return
+  }
+  this.value = result
+  this.state = 'fulfilled'
+  this.emit() // 发布
+}
 
+reject(reason) {
+  if (this.state !== 'pending') {
+    return
+  }
+  this.value = reason
+  this.state = 'rejected'
+  this.emit() // 发布
+}
+
+then(onFulfilled, onRejected) {
+  const nextPromise = new Promise(() => {})
+  if (typeof onFulfilled === 'function') {
+    // 函数记忆化, 保证了只调用一次onFulfilled
+    onFulfilled.called = false
+  }
+  if (typeof onRejected === 'function') {
+    // 函数记忆化, 保证了只调用一次onRejected
+    onRejected.called = false
+  }
+  this.on.push({
+    onFulfilled,
+    onRejected,
+    nextPromise
+  })
+  this.emit() // 发布
+  return nextPromise
+}
+
+// 这也是为什么我之前数组起名 on 的原因
+emit() {
+  if (this.state === 'pending') { return }
+  const onName = this.state == 'fulfilled' ? 'onFulfilled' : 'onRejected'
+  const resolveOrReject =  this.state == 'fulfilled' ? 'resolveWith' : 'reject'
+  nextTick(() => {
+    this.on.forEach(listener => {
+      const { nextPromise } = listener
+      if (typeof listener[onName] === 'function') {
+        if (listener[onName].called) {
+          return
+        }
+        listener[onName].called = true
+        let x
+        try {
+          x = listener[onName].call(undefined, this.value)
+        } catch (e) {
+          nextPromise.reject(e)
+          return
+        }
+        nextPromise.resolveWith(x)
+      } else {
+        nextPromise[resolveOrReject](this.value)
+      }
+    })
+  })
+}
 ```
 
-then里也要有一个nextTick, 那么可以优化成$emit
-但是就引入了一个新的问题, onFulfilled可能会调用两次了, 有两种思路:
-要么简单的函数记忆化, 要么 splice(0)
+### BONUS #3
+
+有人跟我一开始一样对这个`constructor`很迷惑吗
+
+```javascript
+constructor(fn) {
+  fn(this.resolve.bind(this), this.reject(this))
+}
+```
+
+构造函数传进去一个函数, 然后执行这个函数, 执行这个函数再传两个函数进去
+希望这篇文章可以帮助大家理解: [形象记忆javascript高阶函数和回调](https://)
+
+## 总结
+
+手写Promise可以极大地锻炼js基本功/笑着哭
+
+- 用到了大量`ES6`语法
+- `bind`用法
+- 函数记忆化
+- 闭包
+- 发布订阅模式
+- 代码重构
+- 高阶函数
+
+## 完整代码
+
+[实现代码](https://)(完美通过各种奇葩测试用例)
+[测试用例(呕心沥血, 比实现代码还多)](https://)
+
+## 参考
 
 <https://www.promisejs.org/implementing/>
-https://stackoverflow.com/questions/23772801/basic-javascript-promise-implementation-attempt/23785244#23785244
+<https://stackoverflow.com/questions/23772801/basic-javascript-promise-implementation-attempt/>
+<https://promisesaplus.com/>
+<https://juejin.im/post/5b6161e6f265da0f8145fb72>
