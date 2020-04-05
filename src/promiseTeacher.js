@@ -42,26 +42,6 @@ class Promise {
     }
   }
 
-  handleResult(result) {
-    if (result instanceof Promise) {
-      result.then(
-        (y) => {
-          this.state === 'fulfilled'
-          if (y instanceof Promise) {
-            // y 可能又是一个 promise
-            this.handleResult(y)
-          } else {
-            this.value = y
-          }
-        },
-        (r) => {
-          this.value = r
-          this.state = 'rejected'
-        }
-      )
-    }
-  }
-
   // FIXME resolve 只有在 resolveWith 里才能出现
   resolve(result) {
     if (this.state !== 'pending') {

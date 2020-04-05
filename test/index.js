@@ -229,7 +229,7 @@ describe('Promise', () => {
             this.num = num
           }
           then(resolve, reject) {
-            // 1 秒后使用 this.num*2 进行 resolve
+            // 100 毫秒后使用 this.num*2 进行 resolve
             setTimeout(() => resolve(this.num * 2), 100)
           }
         }
@@ -331,7 +331,7 @@ describe('Promise', () => {
           })
       })
     })
-    it('2.3.4 如果 x既不是对象也不是函数，用x完成(fulfill)promise', done => {
+    it('2.3.4 如果x既不是对象也不是函数，用x完成(fulfill)promise', done => {
       new Promise(resolve => resolve())
         .then(() => 2333)
         .then(num => {

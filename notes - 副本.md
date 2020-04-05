@@ -10,7 +10,7 @@
 
 ![executor](notes.images/2020-03-31-22-38-55.png)
 
-根据MDN, 构造函数里传的函数应当立即执行
+根据MDN, 构造函数里传的函数应当立即执行, 同时Promise需要一个value来作为自己的值
 
 ```javascript
 class Promise {
@@ -39,6 +39,7 @@ class Promise {
 + state = 'pending'
 
   constructor(fn) {
+  	this.state = 'pending'
     if (typeof fn !== 'function') {
       throw new Error('构造函数里必须传一个函数')
       return
